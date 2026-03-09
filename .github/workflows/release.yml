@@ -102,9 +102,10 @@ jobs:
         id: version
         run: |
           PILOT_VERSION=$(grep '<revision>' build/SysML-v2-Pilot-Implementation/pom.xml | head -1 | sed 's/.*<revision>\(.*\)<\/revision>.*/\1/' | sed 's/-SNAPSHOT//')
+          SPEC_VERSION=${{ steps.versions.outputs.pilot }}
           SHORT_HASH=$(git rev-parse --short HEAD)
           DATE=$(date -u +%Y%m%d)
-          echo "tag=${PILOT_VERSION}-${DATE}.${SHORT_HASH}" >> "$GITHUB_OUTPUT"
+          echo "tag=${PILOT_VERSION}-${SPEC_VERSION}-${DATE}.${SHORT_HASH}" >> "$GITHUB_OUTPUT"
 
       - name: Create release
         uses: softprops/action-gh-release@v2
