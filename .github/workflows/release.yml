@@ -10,7 +10,8 @@ jobs:
     runs-on: ubuntu-latest
     if: >-
       github.event_name == 'workflow_dispatch' ||
-      contains(github.event.head_commit.message, '[release]')
+      (github.event_name == 'push' &&
+       contains(github.event.head_commit.message, '[release]'))
     permissions:
       contents: write
     steps:
@@ -21,88 +22,22 @@ jobs:
           distribution: 'liberica'
           java-version: '21'
 
-      - name: Read versions
-        id: versions
-        run: |
-          get_prop() { grep "^$1=" versions.properties | cut -d= -f2; }
-          echo "pilot=$(get_prop org.omg.sysml.version)" >> "$GITHUB_OUTPUT"
-          echo "xtext=$(get_prop org.eclipse.xtext.version)" >> "$GITHUB_OUTPUT"
-          echo "lsp4j=$(get_prop org.eclipse.lsp4j.version)" >> "$GITHUB_OUTPUT"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
 
-      - name: Clone SysML v2 Pilot Implementation
-        run: |
-          PILOT_REF="${{ steps.versions.outputs.pilot }}"
-          git clone --depth 1 -b "${PILOT_REF}" https://github.com/Systems-Modeling/SysML-v2-Pilot-Implementation.git build/SysML-v2-Pilot-Implementation
+      - name: Build
+        run: ./build.sh
 
-      - name: Build pilot implementation
-        run: |
-          cd build/SysML-v2-Pilot-Implementation
-          mvn clean package -DskipTests -Dxpect.tests.skip=true -T 4
-
-      - name: Download LSP dependencies
-        run: |
-          mkdir -p build/lib
-          MAVEN_CENTRAL="https://repo1.maven.org/maven2"
-          XTEXT_VERSION="${{ steps.versions.outputs.xtext }}"
-          LSP4J_VERSION="${{ steps.versions.outputs.lsp4j }}"
-          for artifact in \
-            "org/eclipse/xtext/org.eclipse.xtext.ide/${XTEXT_VERSION}/org.eclipse.xtext.ide-${XTEXT_VERSION}.jar" \
-            "org/eclipse/xtext/org.eclipse.xtext.xbase.ide/${XTEXT_VERSION}/org.eclipse.xtext.xbase.ide-${XTEXT_VERSION}.jar" \
-            "org/eclipse/lsp4j/org.eclipse.lsp4j/${LSP4J_VERSION}/org.eclipse.lsp4j-${LSP4J_VERSION}.jar" \
-            "org/eclipse/lsp4j/org.eclipse.lsp4j.jsonrpc/${LSP4J_VERSION}/org.eclipse.lsp4j.jsonrpc-${LSP4J_VERSION}.jar" \
-            "org/eclipse/lsp4j/org.eclipse.lsp4j.generator/${LSP4J_VERSION}/org.eclipse.lsp4j.generator-${LSP4J_VERSION}.jar"; do
-            curl -sL -o "build/lib/$(basename $artifact)" "${MAVEN_CENTRAL}/${artifact}"
-          done
-
-      - name: Assemble fat JAR
-        run: |
-          PILOT_DIR="build/SysML-v2-Pilot-Implementation"
-          ASSEMBLY_DIR="build/assembly"
-          mkdir -p "${ASSEMBLY_DIR}"
-          cd "${ASSEMBLY_DIR}"
-
-          # Base: interactive fat JAR
-          jar xf "../../${PILOT_DIR}/org.omg.sysml.interactive/target/$(ls ../../${PILOT_DIR}/org.omg.sysml.interactive/target/ | grep '\-all\.jar$')"
-
-          # LSP dependencies
-          for jar in ../../build/lib/*.jar; do
-            jar xf "${jar}"
-          done
-
-          # IDE modules
-          for module in org.omg.sysml.xtext.ide org.omg.kerml.xtext.ide org.omg.kerml.expressions.xtext.ide; do
-            jar xf "$(ls ../../${PILOT_DIR}/${module}/target/${module}-*-SNAPSHOT.jar | grep -v sources)"
-          done
-
-          # Service registrations
-          mkdir -p META-INF/services
-          cat > META-INF/services/org.eclipse.xtext.ISetup <<EOF
-          org.omg.sysml.xtext.ide.SysMLIdeSetup
-          org.omg.kerml.xtext.ide.KerMLIdeSetup
-          org.omg.kerml.expressions.xtext.ide.KerMLExpressionsIdeSetup
-          org.eclipse.xtext.xbase.ide.XtypeIdeSetup
-          org.eclipse.xtext.xbase.ide.XbaseIdeSetup
-          org.eclipse.xtext.xbase.annotations.ide.XbaseWithAnnotationsIdeSetup
-          EOF
-          sed -i 's/^          //' META-INF/services/org.eclipse.xtext.ISetup
-
-          # Compile custom launcher
-          javac -cp . -d . ../../src/SysMLServerLauncher.java
-
-          # Manifest
-          printf 'Manifest-Version: 1.0\nMain-Class: SysMLServerLauncher\n' > META-INF/MANIFEST.MF
-
-          # Remove signatures
-          rm -f META-INF/*.SF META-INF/*.DSA META-INF/*.RSA
-
-          # Package
-          jar cfm ../../sysml-lsp-server.jar META-INF/MANIFEST.MF .
+      - name: Test
+        run: ./test/test-lsp.sh
 
       - name: Compute version
         id: version
         run: |
+          get_prop() { grep "^$1=" versions.properties | cut -d= -f2; }
           PILOT_VERSION=$(grep '<revision>' build/SysML-v2-Pilot-Implementation/pom.xml | head -1 | sed 's/.*<revision>\(.*\)<\/revision>.*/\1/' | sed 's/-SNAPSHOT//')
-          SPEC_VERSION=${{ steps.versions.outputs.pilot }}
+          SPEC_VERSION=$(get_prop org.omg.sysml.version)
           SHORT_HASH=$(git rev-parse --short HEAD)
           DATE=$(date -u +%Y%m%d)
           echo "tag=${PILOT_VERSION}-${SPEC_VERSION}-${DATE}.${SHORT_HASH}" >> "$GITHUB_OUTPUT"
@@ -112,5 +47,7 @@ jobs:
         with:
           tag_name: ${{ steps.version.outputs.tag }}
           name: ${{ steps.version.outputs.tag }}
-          files: sysml-lsp-server.jar
+          files: |
+            sysml-lsp-server.jar
+            sysml.library.zip
           make_latest: true

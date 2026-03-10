@@ -20,6 +20,10 @@ PILOT_BRANCH="$(get_prop org.omg.sysml.version)"
 XTEXT_VERSION="$(get_prop org.eclipse.xtext.version)"
 LSP4J_VERSION="$(get_prop org.eclipse.lsp4j.version)"
 
+AADL_LIB_REPO="https://github.com/santoslab/sysml-aadl-libraries.git"
+AADL_LIB_BRANCH="$(get_prop org.santoslab.sysml-aadl-libraries.version)"
+AADL_LIB_DIR="${BUILD_DIR}/sysml-aadl-libraries"
+
 MAVEN_CENTRAL="https://repo1.maven.org/maven2"
 
 # Ensure JDK 21
@@ -44,6 +48,15 @@ if [ -d "${PILOT_DIR}/.git" ]; then
 else
   echo "==> Cloning pilot implementation..."
   git clone --depth 1 -b "${PILOT_BRANCH}" "${PILOT_REPO}" "${PILOT_DIR}"
+fi
+
+# 1b. Clone or update AADL libraries
+if [ -d "${AADL_LIB_DIR}/.git" ]; then
+  echo "==> Updating AADL libraries..."
+  git -C "${AADL_LIB_DIR}" pull --ff-only
+else
+  echo "==> Cloning AADL libraries..."
+  git clone --depth 1 -b "${AADL_LIB_BRANCH}" "${AADL_LIB_REPO}" "${AADL_LIB_DIR}"
 fi
 
 # 2. Build with Maven (skip tests)
@@ -109,11 +122,11 @@ org.eclipse.xtext.xbase.ide.XbaseIdeSetup
 org.eclipse.xtext.xbase.annotations.ide.XbaseWithAnnotationsIdeSetup
 EOF
 
-# Compile and add custom launcher
-echo "==> Compiling SysMLServerLauncher..."
+# Compile and add custom launcher + workspace config factory
+echo "==> Compiling custom server classes..."
 "${JAVA_HOME}/bin/javac" -cp "${ASSEMBLY_DIR}" \
   -d "${ASSEMBLY_DIR}" \
-  "${SCRIPT_DIR}/src/SysMLServerLauncher.java" \
+  "${SCRIPT_DIR}"/src/*.java \
   > "${BUILD_DIR}/javac.log" 2>&1 \
   || { echo "Compilation failed. See ${BUILD_DIR}/javac.log"; exit 1; }
 
@@ -127,11 +140,49 @@ EOF
 # Remove signature files that break fat JARs
 rm -f "${ASSEMBLY_DIR}"/META-INF/*.SF "${ASSEMBLY_DIR}"/META-INF/*.DSA "${ASSEMBLY_DIR}"/META-INF/*.RSA
 
-# Package
+# Add license files
+cp "${SCRIPT_DIR}/LICENSE" "${ASSEMBLY_DIR}/META-INF/LICENSE"
+cp "${SCRIPT_DIR}/LICENSE-GPL" "${ASSEMBLY_DIR}/META-INF/LICENSE-GPL"
+
+# 5. Stage libraries (standard + AADL)
+LIB_STAGING="${BUILD_DIR}/library-staging"
+rm -rf "${LIB_STAGING}"
+mkdir -p "${LIB_STAGING}"
+
+echo "==> Staging libraries..."
+cp -a "${PILOT_DIR}/sysml.library" "${LIB_STAGING}/sysml.library"
+rm -rf "${LIB_STAGING}/sysml.library/output" \
+       "${LIB_STAGING}/sysml.library/.git"* \
+       "${LIB_STAGING}/sysml.library/.project" \
+       "${LIB_STAGING}/sysml.library/.settings" \
+       "${LIB_STAGING}/sysml.library/.workspace.json"
+
+cp -a "${AADL_LIB_DIR}/aadl.library" "${LIB_STAGING}/aadl.library"
+cp -a "${AADL_LIB_DIR}/hamr.aadl.library" "${LIB_STAGING}/hamr.aadl.library"
+rm -rf "${LIB_STAGING}/aadl.library/.project" \
+       "${LIB_STAGING}/aadl.library/.settings" \
+       "${LIB_STAGING}/hamr.aadl.library/.project" \
+       "${LIB_STAGING}/hamr.aadl.library/.settings"
+
+# Embed libraries inside the JAR under sysml-libraries/
+echo "==> Embedding libraries in JAR..."
+mkdir -p "${ASSEMBLY_DIR}/sysml-libraries"
+cp -a "${LIB_STAGING}/sysml.library" "${ASSEMBLY_DIR}/sysml-libraries/sysml.library"
+cp -a "${LIB_STAGING}/aadl.library" "${ASSEMBLY_DIR}/sysml-libraries/aadl.library"
+cp -a "${LIB_STAGING}/hamr.aadl.library" "${ASSEMBLY_DIR}/sysml-libraries/hamr.aadl.library"
+
+# Package JAR
 echo "==> Packaging ${OUT_JAR}..."
 cd "${ASSEMBLY_DIR}"
 jar cfm "${OUT_JAR}" META-INF/MANIFEST.MF .
 echo "    Done. $(du -h "${OUT_JAR}" | cut -f1) JAR created."
+
+# 6. Package standalone library zip (for external use)
+LIB_ZIP="${SCRIPT_DIR}/sysml.library.zip"
+echo "==> Packaging library zip..."
+cd "${LIB_STAGING}"
+zip -qr "${LIB_ZIP}" sysml.library aadl.library hamr.aadl.library
+echo "    Done. $(du -h "${LIB_ZIP}" | cut -f1) library zip created."
 
 echo ""
 echo "Run with: java -jar ${OUT_JAR}"

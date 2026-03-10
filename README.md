@@ -65,6 +65,18 @@ for SysML, KerML, and KerML Expressions, and adds a custom
 EPackage registrations required in headless mode before delegating to the
 standard XText `ServerLauncher`.
 
+## Testing
+
+After building, run the integration tests:
+
+```bash
+./test/test-lsp.sh
+```
+
+The tests verify LSP capabilities, diagnostics, document symbols, hover,
+completion, go-to-definition, find references, formatting, and workspace
+symbols.  Requires Node.js 20+.
+
 ## Releases
 
 The GitHub Actions [workflow](.github/workflows/release.yml) builds and publishes
@@ -76,6 +88,8 @@ The GitHub Actions [workflow](.github/workflows/release.yml) builds and publishe
 Release tags follow the format `<pilot-version>-YYYYMMDD.<short-hash>`.
 ## License
 
-See the [SysML v2 Pilot Implementation](https://github.com/Systems-Modeling/SysML-v2-Pilot-Implementation)
-for upstream licensing.  The custom launcher and build scripts in this repository
-are provided under the same terms.
+This project is licensed under the
+[GNU Lesser General Public License v3.0 or later](LICENSE) (LGPL-3.0-or-later),
+the same license as the upstream
+[SysML v2 Pilot Implementation](https://github.com/Systems-Modeling/SysML-v2-Pilot-Implementation).
+See [LICENSE](LICENSE) and [LICENSE-GPL](LICENSE-GPL).
