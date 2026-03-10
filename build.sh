@@ -114,9 +114,9 @@ done
 SERVICES_DIR="${ASSEMBLY_DIR}/META-INF/services"
 mkdir -p "${SERVICES_DIR}"
 cat > "${SERVICES_DIR}/org.eclipse.xtext.ISetup" <<'EOF'
-org.omg.sysml.xtext.ide.SysMLIdeSetup
-org.omg.kerml.xtext.ide.KerMLIdeSetup
-org.omg.kerml.expressions.xtext.ide.KerMLExpressionsIdeSetup
+CustomSysMLIdeSetup
+CustomKerMLIdeSetup
+CustomKerMLExpressionsIdeSetup
 org.eclipse.xtext.xbase.ide.XtypeIdeSetup
 org.eclipse.xtext.xbase.ide.XbaseIdeSetup
 org.eclipse.xtext.xbase.annotations.ide.XbaseWithAnnotationsIdeSetup

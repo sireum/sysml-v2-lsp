@@ -391,6 +391,64 @@ await runTest("workspace/symbol finds Vehicle", async () => {
   }
 });
 
+// Semantic tokens
+console.log("\nSemantic Tokens:");
+
+await runTest("semanticTokens/full returns tokens for valid file", async () => {
+  const result = await client.send("textDocument/semanticTokens/full", {
+    textDocument: { uri: validUri },
+  });
+  assert(
+    !result.error,
+    `semanticTokens should not error: ${JSON.stringify(result.error)}`,
+  );
+  assert(result.result, "semanticTokens should return a result");
+  assert(result.result.data, "semanticTokens should have data array");
+  assert(
+    result.result.data.length > 0,
+    "semanticTokens data should not be empty",
+  );
+  // Data is encoded as groups of 5 integers: deltaLine, deltaStartChar, length, tokenType, tokenModifiers
+  assert(
+    result.result.data.length % 5 === 0,
+    `semanticTokens data length (${result.result.data.length}) should be multiple of 5`,
+  );
+});
+
+await runTest("semanticTokens contains keyword tokens", async () => {
+  const result = await client.send("textDocument/semanticTokens/full", {
+    textDocument: { uri: validUri },
+  });
+  // Token types from the server capability: keyword is index 15
+  const data = result.result.data;
+  let hasKeyword = false;
+  for (let i = 0; i < data.length; i += 5) {
+    if (data[i + 3] === 15) {
+      // tokenType index 15 = keyword
+      hasKeyword = true;
+      break;
+    }
+  }
+  assert(hasKeyword, "should have at least one keyword token");
+});
+
+await runTest("semanticTokens contains type tokens", async () => {
+  const result = await client.send("textDocument/semanticTokens/full", {
+    textDocument: { uri: validUri },
+  });
+  // Token types: type is index 1
+  const data = result.result.data;
+  let hasType = false;
+  for (let i = 0; i < data.length; i += 5) {
+    if (data[i + 3] === 1) {
+      // tokenType index 1 = type
+      hasType = true;
+      break;
+    }
+  }
+  assert(hasType, "should have at least one type token (for part def Vehicle)");
+});
+
 // AADL library tests
 console.log("\nAADL Library:");
 
